@@ -1,0 +1,10 @@
+{
+  "verbose": true,
+  "ignore": ["*.test.js", "fixtures/*","db.json","tests/*","*.pem","*.log","errorShots/*",
+      "node_modules/","public/"],
+  "watch": ["*"],
+  "execMap": {
+    "rb": "ruby",
+    "pde": "processing --sketch={{pwd}} --run"
+  }
+}

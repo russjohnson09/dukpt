@@ -1,84 +1,94 @@
-//
-// # SimpleServer
-//
-// A simple chat server using Socket.IO, Express, and Async.
-//
-var http = require('http');
-var path = require('path');
+const express = require('express');
+const path = require('path');
+const winston = require('winston');
 
-var async = require('async');
-var socketio = require('socket.io');
-var express = require('express');
+var app = express();
+app.use(express.static(path.join('.', 'public')));
 
-//
-// ## SimpleServer `SimpleServer(obj)`
-//
-// Creates a new instance of SimpleServer with the following options:
-//  * `port` - The HTTP port to listen on. If `process.env.PORT` is set, _it overrides this value_.
-//
-var router = express();
-var server = http.createServer(router);
-var io = socketio.listen(server);
+var router = express.Router();
 
-router.use(express.static(path.resolve(__dirname, 'client')));
-var messages = [];
-var sockets = [];
+const bodyParser = require('body-parser');
 
-io.on('connection', function (socket) {
-    messages.forEach(function (data) {
-      socket.emit('message', data);
-    });
+app.use(bodyParser.json());
 
-    sockets.push(socket);
 
-    socket.on('disconnect', function () {
-      sockets.splice(sockets.indexOf(socket), 1);
-      updateRoster();
-    });
-
-    socket.on('message', function (msg) {
-      var text = String(msg || '');
-
-      if (!text)
-        return;
-
-      socket.get('name', function (err, name) {
-        var data = {
-          name: name,
-          text: text
-        };
-
-        broadcast('message', data);
-        messages.push(data);
-      });
-    });
-
-    socket.on('identify', function (name) {
-      socket.set('name', String(name || 'Anonymous'), function (err) {
-        updateRoster();
-      });
-    });
-  });
-
-function updateRoster() {
-  async.map(
-    sockets,
-    function (socket, callback) {
-      socket.get('name', callback);
+// Create endpoint handlers for oauth2 authorize
+router.route('/carddata')
+  .post(
+    //authorize request
+    function(req, res, next) {
+      next();
     },
-    function (err, names) {
-      broadcast('roster', names);
+    //process request
+    function(req, res, next) {
+      winston.debug('request params=' + JSON.stringify(req.params));
+      winston.debug('request body=' + JSON.stringify(req.body));
+      var result = createEncryptedTrack(req.body);
+      console.log(req.body);
+      winston.info(result);
+      res.json(result);
     }
   );
-}
 
-function broadcast(event, data) {
-  sockets.forEach(function (socket) {
-    socket.emit(event, data);
-  });
-}
-
-server.listen(process.env.PORT || 3000, process.env.IP || "0.0.0.0", function(){
-  var addr = server.address();
-  console.log("Chat server listening at", addr.address + ":" + addr.port);
+router.get('/ping', function(req, res, next) {
+  res.end('hello');
 });
+
+
+app.use('/v1', router);
+
+
+// Start the server
+var server = app.listen(process.env.PORT, function() {
+  winston.info(server.address().port);
+});
+
+
+
+
+const Dukpt = require('dukpt');
+const encryptionBDK = '0123456789ABCDEFFEDCBA9876543210';
+const ksn = 'FFFF9876543210E00008';
+const dukpt = new Dukpt(encryptionBDK, ksn);
+const moment = require('moment-timezone');
+
+function createEncryptedTrack(opts) {
+  var account_number = opts.account_number || '5454545454545454';
+    var account_holder_name = opts.account_number || 'test account';
+  var cvv = opts.cvv || '999';
+  var exp_date = opts.exp_date || '2050-03-05';
+  
+  exp_date = moment(exp_date);
+
+
+  var result = {};
+  result.account_number = account_number;
+  result.last_four = result.account_number.substr(-4);
+  result.exp_date = exp_date.format('MMYY');
+  result.track_exp_date = exp_date.format('YYMM');
+  result.first_six = result.account_number.substr(0, 6);
+  result.last_four = result.account_number.substr(-4);
+  result.account_holder_name = account_holder_name;
+  result.cvv = cvv;
+
+  result.track1 = '%B' + result.account_number + '^' + result.account_holder_name + '^' +
+    '17041010001111A123456789012?' + result.track_exp_date + "12000000153000000?";
+
+  result.track2 = ';' + result.account_number + '=' +
+    result.track_exp_date + '1011000012345678?';
+
+  result.ingenico_keyed_data = result.account_number + '=' + result.track_exp_date + '=' + result.cvv;
+
+  result.track1_encrypted = dukpt.dukptEncrypt(result.track1, dukpt.options);
+  result.track2_encrypted = dukpt.dukptEncrypt(result.track2, dukpt.options);
+  result.ingenico_keyed_data_encrypted = dukpt.dukptEncrypt(result.ingenico_keyed_data, dukpt.options);
+
+  result.trackfull = result.track1 + result.track2;
+  result.e_track_data = result.trackfull + '00|' + result.track1_encrypted + '|' + result.track2_encrypted;
+  
+  
+  result.encryptionBDK = encryptionBDK;
+  result.ksn = ksn;
+
+  return result;
+}
